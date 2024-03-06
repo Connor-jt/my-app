@@ -1,18 +1,41 @@
+/* //////////////// // ---------------------------------------------------------------------------------
+// MAIN APP STYLES //
+// ////////////// */
 .App {
-  text-align: center;
-}
-
-.App-header {
+  margin: 0px;
+  padding: 0px;
   background-color: #282c34;
+  font-size: calc(10px + 2vmin);
+  color: white;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
 }
 
-.App-link {
-  color: #61dafb;
+/* //////////////// // -------------------------------------------------------------------------------
+// TOOL BAR STYLES //
+// ///////////// */
+.ToolView{
+  height: 50px;
+}
+.ToolItem{
+  background-color: transparent;
+  margin: 10px, 0px;
+  border: none;
+  color: white;
+}
+.ToolItem:hover{
+  background-color: #9090ff15;
+}
+.ToolItem:active{
+  background-color: #9090ff35;
+}
+
+/* ////////////// // --------------------------------------------------------------------------------
+// UNUSED STYLES // 
+// //////////// */
+.App-header {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
