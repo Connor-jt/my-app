@@ -1,13 +1,19 @@
 /* //////////////// // ---------------------------------------------------------------------------------
 // MAIN APP STYLES //
 // ////////////// */
+
+html, body{
+  height: 100vh;
+  margin: 0;
+}
+
 .App {
   margin: 0px;
   padding: 0px;
-  background-color: #282c34;
+  background-color: #010409;
   font-size: calc(10px + 2vmin);
   color: white;
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -16,11 +22,11 @@
 // TOOL BAR STYLES //
 // ///////////// */
 .ToolView{
-  height: 50px;
+  flex: 0 1 30px;
 }
 .ToolItem{
+  float: left;
   background-color: transparent;
-  margin: 10px, 0px;
   border: none;
   color: white;
 }
@@ -29,6 +35,54 @@
 }
 .ToolItem:active{
   background-color: #9090ff35;
+}
+
+/* ///////////////// // -------------------------------------------------------------------------------
+// FILE LIST STYLES //
+// /////////////// */
+.FileView{
+  flex: 0 1 18px;
+}
+.FileViewSeparator{
+  border: 0;
+  border-bottom: 1px solid #21262d;
+  height: 1px;
+  margin: 5px 0px 0px 0px;
+  padding: 0px;
+  width: 100vw;
+}
+
+
+
+/* //////////////////// // -------------------------------------------------------------------------------
+// CONTENT VIEW STYLES //
+// ////////////////// */
+.App .ContentView{
+  flex: 1 1 auto;
+  background-color: #0d1117;
+  
+  display: flex;
+  flex-direction: row;
+}
+.App .Footer {
+  flex: 0 1 18px;
+  background-color: #384153;
+}
+.OffsetView{
+  margin: 0px 10px 0px 10px;
+  font-size: 16px;
+  flex: 0 1 auto;
+  color: #db2100;
+}
+
+.resizable-content { 
+  flex: 0 1 auto;
+  min-height: 30px; 
+  min-width: 30px; 
+  resize: both; 
+  overflow: auto; 
+  max-height: fit-content; 
+  max-width: fit-content; 
 }
 
 /* ////////////// // --------------------------------------------------------------------------------
