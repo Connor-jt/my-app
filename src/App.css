@@ -25,6 +25,7 @@ html, body{
   flex: 0 1 30px;
 }
 .ToolItem{
+  margin: 5px;
   float: left;
   background-color: transparent;
   border: none;
@@ -35,6 +36,18 @@ html, body{
 }
 .ToolItem:active{
   background-color: #9090ff35;
+}
+.ToolFileItemWrapper{
+  font-size: 11px;
+  padding-block: 1px;
+  padding-inline: 6px;
+}
+.ToolFileItemText{
+  padding: 0px;
+  margin: 0px;
+}
+.ToolFileItem{
+  display: none;
 }
 
 /* ///////////////// // -------------------------------------------------------------------------------

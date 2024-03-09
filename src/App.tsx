@@ -2,6 +2,8 @@ import React, { ChangeEventHandler } from 'react';
 import './App.css';
 import assert from 'assert';
 import { arrayBuffer } from 'stream/consumers';
+import ReactDOM from 'react-dom';
+import { Root, createRoot } from 'react-dom/client';
 
 
 // ////////////////////////////////// // ----------------------------------------------------------------------------------
@@ -28,7 +30,7 @@ class FileProcessor{
     this.has_init = true;
     console.log(this.lower_chunk);
     console.log(this.upper_chunk);
-    RefreshContentView();
+    RefreshFileView();
   }
   async read(offset:number, count:number):Promise<Uint8Array>{
     if (count != 0) throw new Error("dont read 0 bytes");
@@ -98,36 +100,28 @@ class FileProcessor{
     return new Promise(read_promise());
   }
 }
-// -----------------------------------------------------------------------------------------------------------------------
-
-
-
-function hook_filesbox(){
-
-  let files_box = document.getElementById('file');
-  if (files_box == null) throw("failed to find file input element");
-  files_box!.onchange = e => {}
-}
-  
-  
+// file loading UI function
 function FileBoxOnChanged(e: { target: HTMLInputElement | null; }){ 
-    if (e.target == null) throw("filebox target doesn't exist");
-    let input = e.target as HTMLInputElement;
-    if (input.files == null || input.files!.length == 0) {return;} // "filbox no files selected"
+  if (e.target == null) throw("filebox target doesn't exist");
+  let input = e.target as HTMLInputElement;
+  if (input.files == null || input.files!.length == 0) {return;} // "filebox no files selected"
 
-    let file:File = input.files![0];
-    if (file == null){return;} // skip null file
+  let file:File = input.files![0];
+  if (file == null){return;} // skip null file
+  input.value = ""; // clean input value
 
-    let opened_file = new FileProcessor(file);
-    opened_file.init();
-    open_files.push(opened_file);
+  let opened_file = new FileProcessor(file);
+  opened_file.init();
+  open_files.push(opened_file);
 };
+// -----------------------------------------------------------------------------------------------------------------------
 
 
 // //////////// //
 // GLOBAL DATA //
 // ////////// //
 var open_files:FileProcessor[] = [];
+var active_files:FileProcessor[] = []; // only modified when calling the refresh function
 
 
 
@@ -182,14 +176,34 @@ function EditView(){
 }
 
 // wrapper window for files and content views
-function ContentView(){
+function FileView(){
 
   // need the offset side bar
   // need the "offset" and then offset per column and "decoded text"???
 
 }
-function RefreshContentView(){
+var fileview_root:Root|undefined = undefined;
+function RefreshFileView(){
+  const FileViewContainer = () => {return(<div>{active_files.map((el, index) => React.createElement("button", { key: index, className: "ToolItem", onClick: FileClick, file_index: index }, el.file.name))}</div>);};
+  // first update the active files list, so our indexes correctly correspond
+  active_files = [];
+  for (let i = 0; i < open_files.length; i++)
+    if (open_files[i].has_init) active_files.push(open_files[i]);
 
+  if (fileview_root == null) fileview_root = createRoot(document.getElementById('FilePanel')!);
+  fileview_root.render(<FileViewContainer />);
+}
+function FileClick(e:Event){
+  if (e.target == null) throw("filebutton target doesn't exist");
+  let input = e.target as HTMLButtonElement;
+  // get the stored file index attribute
+  let index_property = input.getAttribute("file_index") as string;
+  if (index_property == null) throw new Error()
+  let index = parseInt(index_property);
+
+  // do thing with this file index
+  console.log(index);
+  console.log(open_files[index]);
 }
 
 // main app view
@@ -201,12 +215,13 @@ function App() {
         <button className='ToolItem'>File</button>
         <button className='ToolItem'>Edit</button>
         <button className='ToolItem'>Tools</button>
-        <input id="file" type="file" onChange={FileBoxOnChanged} title="Select file to load" />
+        <label className="ToolItem ToolFileItemWrapper">
+          <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
+          <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
+        </label>
       </div>
       {/* file view/list */}
-      <div className='FileView'>
-        <button className='ToolItem'>example1</button>
-        <button className='ToolItem'>example2</button>
+      <div id="FilePanel" className='FileView'>
       </div>
       <hr className='FileViewSeparator'></hr>
       {/* content views */}
@@ -219,3 +234,11 @@ function App() {
 }
 
 export default App;
+/*
+
+        <button className='ToolItem'>example1</button>
+        <button className='ToolItem'>example2</button>
+
+
+
+*/
