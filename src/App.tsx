@@ -1,4 +1,4 @@
-import React, { ChangeEventHandler } from 'react';
+import React, { ChangeEventHandler, WheelEventHandler } from 'react';
 import './App.css';
 import assert from 'assert';
 import { arrayBuffer } from 'stream/consumers';
@@ -26,7 +26,23 @@ function Uint8ToHex(byte_array:Uint8Array) {
 // TEMP FILE LOADING FUNCTIONALITIES // ----------------------
 // //////////////////////////////// // ------------------------------------------------------------------------------------
 const FileChunkSize:number = 1024;
+const line_height = 19;
 class FileProcessor{
+  // page config stuff
+  byte_offset:number = 0;
+  bytes_per_row:number = 10;
+  visible_rows:number = 10;
+  total_rows:number = 10;
+  SetRowWidth(new_width:number){
+    this.bytes_per_row = new_width;
+    this.total_rows = Math.trunc(this.file.size / this.bytes_per_row);
+    // account for any extra data that gets truncated
+    if (this.file.size % this.bytes_per_row != 0) this.total_rows += 1; 
+  }
+  RefreshSize(new_content_view_height:number){
+    this.visible_rows = Math.trunc(new_content_view_height / line_height) + 1; // plus one row to account for lost row when truncating
+  }
+  // file reading stuff
   file:File;
   lowest_offset:number; // first byte of lower chunk
   highest_offset:number; // last byte of upper chunk (unituitively this is actually the offset after the highest accessible byte, it just makes the code need a lot less '-1's)
@@ -41,11 +57,10 @@ class FileProcessor{
     this.highest_offset = FileChunkSize*2;
   }
   async init(){
+    this.SetRowWidth(16);
     this.lower_chunk = await this.call_file_read(0);
     this.upper_chunk = await this.call_file_read(FileChunkSize);
     this.has_init = true;
-    console.log(this.lower_chunk);
-    console.log(this.upper_chunk);
     RefreshFileView();
   }
   async read(offset:number, count:number):Promise<Uint8Array>{
@@ -57,12 +72,11 @@ class FileProcessor{
     let last_offset = offset+count; // actually +1 of the last offset
     
     // drop any overflowing indicies, so we're only attempting to read inside the boundaries of the file
-    { let bytes_overflowing = this.file.size - (offset + count);
+    { let bytes_overflowing = last_offset - this.file.size;
       if (bytes_overflowing > 0){
-        count -= bytes_overflowing
-        if (count >= 0) throw new Error("Attempting to read outside of file bounds");
+        count -= bytes_overflowing;
+        if (count <= 0) throw new Error("Attempting to read outside of file bounds");
     }}
-
     // check whether the offset is below currently loaded data
     if (offset < this.lowest_offset){
       let chunk_lowest_offset = Math.trunc(offset / FileChunkSize) * FileChunkSize;
@@ -71,7 +85,7 @@ class FileProcessor{
       else this.upper_chunk = await this.call_file_read(chunk_lowest_offset + FileChunkSize);
       this.lower_chunk = await this.call_file_read(chunk_lowest_offset);
       this.lowest_offset = chunk_lowest_offset;
-      this.highest_offset = chunk_lowest_offset + (FileChunkSize*2)
+      this.highest_offset = chunk_lowest_offset + (FileChunkSize*2);
     }
     // or if it is beyond the loaded data
     else if (last_offset > this.highest_offset){
@@ -83,19 +97,22 @@ class FileProcessor{
       this.lowest_offset = upper_chunk_lowest_offset - FileChunkSize;
       this.highest_offset = upper_chunk_lowest_offset + FileChunkSize;
     }
-    
+
     // if the data falls within the first chunk
     let upper_chunk_offset = this.lowest_offset+FileChunkSize;
+    let lower_insertion = offset - this.lowest_offset; // not needed in all 3 cases, but to simplify the code
     if (last_offset < upper_chunk_offset)
-      return this.lower_chunk.slice(offset - this.lowest_offset, count);
+      return this.lower_chunk.slice(lower_insertion, lower_insertion+count);
     // if the data falls within the second chunk
-    else if (offset >= upper_chunk_offset)
-      return this.lower_chunk.slice(offset - upper_chunk_offset, count);
+    else if (offset >= upper_chunk_offset){
+      let upper_insertion = offset - upper_chunk_offset;
+      return this.lower_chunk.slice(upper_insertion, upper_insertion+count);
+    }
 
     // else the data falls between the two, requiring merging the data
     let bytes_from_lower = upper_chunk_offset - offset;
     let merged = new Uint8Array(count);
-    merged.set(this.lower_chunk.slice(offset - this.lowest_offset, bytes_from_lower));
+    merged.set(this.lower_chunk.slice(lower_insertion, lower_insertion+bytes_from_lower));
     merged.set(this.lower_chunk.slice(0, count - bytes_from_lower));
     return merged;
   }
@@ -128,6 +145,9 @@ function FileBoxOnChanged(e: { target: HTMLInputElement | null; }){
 
   let opened_file = new FileProcessor(file);
   opened_file.init();
+  let test = document.getElementById('contentView')!.clientHeight;
+  console.log("filepanel size: " + test)
+  opened_file.RefreshSize(test);
   open_files.push(opened_file);
 };
 // -----------------------------------------------------------------------------------------------------------------------
@@ -187,15 +207,20 @@ function FileClick(e:Event){
 // cached stuff for later use // so we dont have to regenerate all that data when we scroll up or down
 var dataview_offset_spans:HTMLSpanElement[] = [];
 var dataview_byte_spans:HTMLSpanElement[] = [];
+var active_file:FileProcessor|undefined = undefined;
 async function LoadBytesView(file:FileProcessor){
+  active_file = file;
   // read & convert all bytes into react span elements
   let byte_spans:React.DetailedReactHTMLElement<{key: number;className: string;}, HTMLElement>[] = [];
   let offset_spans:React.DetailedReactHTMLElement<{key: number;className: string;}, HTMLElement>[] = [];
-  for (let line_index = 0; line_index < total_rows; line_index++){
-    let row_bytes = await file.read(line_index*bytes_per_row, bytes_per_row);
+  let skipped_rows = Math.trunc(active_file.byte_offset/active_file.bytes_per_row);
+  let rows_to_show = Math.min(active_file.total_rows - skipped_rows, active_file.visible_rows);
+  console.log("showing row: " + (skipped_rows) + "/" + active_file.total_rows);
+  for (let line_index = 0; line_index < rows_to_show; line_index++){
+    let row_bytes = await active_file.read(active_file.byte_offset+(line_index*active_file.bytes_per_row), active_file.bytes_per_row);
     var row_text_content = Uint8ToHex(row_bytes);
     byte_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, row_text_content));
-    offset_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, ToPaddedHex(line_index*bytes_per_row, 8)));
+    offset_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, ToPaddedHex(active_file.byte_offset + (line_index*active_file.bytes_per_row), 8)));
   }
   // then render data
   CheckRootHooks();
@@ -205,17 +230,25 @@ async function LoadBytesView(file:FileProcessor){
   root_dataview_offsets!.render(<OffsetsViewContainer />);
 }
 
+
+function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
+  if (active_file == undefined) return;
+
+  if (e.deltaY < 0){
+    active_file.byte_offset = Math.max(active_file.byte_offset-active_file.bytes_per_row, 0);
+  } else {
+    active_file.byte_offset = Math.min(active_file.byte_offset+active_file.bytes_per_row, active_file.file.size-1);
+  }
+  LoadBytesView(active_file); // we'll do an optimized thing for this
+}
+
 // ///////////// //
 // UI FUNCTIONS //
 // /////////// //
-const line_height = 18;
 const offset_bytes = 4;
-var total_bytes:number = NaN;
-var bytes_per_row:number = 10;
+
 
 var available_size:number = 0;
-var visible_rows:number = NaN;
-var total_rows:number = 5;
 
 var last_row_index:number = NaN;
 var last_row_count:number = NaN;
@@ -242,9 +275,9 @@ function App() {
       </div>
       <hr className='FileViewSeparator'></hr>
       {/* content views */}
-      <div className='ContentView'>
-        <div id="offsetsView" className='OffsetView'>00000000</div>
-        <div id="dataView" className='DataView'>00000000</div>
+      <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
+        <div id="offsetsView" className='OffsetView'></div>
+        <div id="dataView" className='DataView'></div>
       </div>
       <div className='Footer'/>
     </div>

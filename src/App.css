@@ -73,7 +73,7 @@ html, body{
 .App .ContentView{
   flex: 1 1 auto;
   background-color: #0d1117;
-  
+  font-family: monospace;
   display: flex;
   flex-direction: row;
 }
