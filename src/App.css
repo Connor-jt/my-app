@@ -76,6 +76,7 @@ html, body{
   font-family: monospace;
   display: flex;
   flex-direction: row;
+  Overflow: hidden;
 }
 .App .Footer {
   flex: 0 1 18px;
