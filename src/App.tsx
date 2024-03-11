@@ -27,6 +27,7 @@ function Uint8ToHex(byte_array:Uint8Array) {
 // //////////////////////////////// // ------------------------------------------------------------------------------------
 const FileChunkSize:number = 1024;
 const line_height = 19;
+var is_reading_data = false;
 class FileProcessor{
   // page config stuff
   byte_offset:number = 0;
@@ -133,6 +134,108 @@ class FileProcessor{
     return new Promise(read_promise());
   }
 }
+
+// cached stuff for later use // so we dont have to regenerate all that data when we scroll up or down
+var dataview_byte_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
+var dataview_offset_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
+var active_file:FileProcessor|undefined = undefined;
+async function LoadBytesView(file:FileProcessor){
+  if (is_reading_data) return; // do not perform any UI updates if we're awaiting a previous update (maybe queue the inputs??)
+  is_reading_data = true;
+  active_file = file;
+  // read & convert all bytes into react span elements
+  let byte_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
+  let offset_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
+  let skipped_rows = Math.trunc(active_file.byte_offset/active_file.bytes_per_row);
+  let rows_to_show = Math.min(active_file.total_rows - skipped_rows, active_file.visible_rows);
+  console.log("showing row: " + (skipped_rows) + "/" + active_file.total_rows);
+  for (let line_index = 0; line_index < rows_to_show; line_index++){
+    let row_bytes = await active_file.read(active_file.byte_offset+(line_index*active_file.bytes_per_row), active_file.bytes_per_row);
+    var row_text_content = Uint8ToHex(row_bytes);
+    byte_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, row_text_content));
+    offset_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, ToPaddedHex(active_file.byte_offset + (line_index*active_file.bytes_per_row), 8)));
+  }
+  // cache results
+  dataview_byte_spans = byte_spans;
+  dataview_offset_spans = offset_spans;
+  // then render data
+  CheckRootHooks();
+  const DataViewContainer = () => {return(<div>{byte_spans}</div>);};
+  const OffsetsViewContainer = () => {return(<div>{offset_spans}</div>);};
+  root_dataview_data!.render(<DataViewContainer />);
+  root_dataview_offsets!.render(<OffsetsViewContainer />);
+  is_reading_data = false;
+}
+async function DataViewScrollUp(){
+  if (is_reading_data) return;
+  is_reading_data = true;
+  // find new base offset
+  // create new react element for the top most item
+  // knock last react elemetn off of the list
+  
+    // make sure we dont scroll to offsets below the minimum offset
+    new_byte_offset = Math.max(active_file.byte_offset-active_file.bytes_per_row, 0);
+
+    
+  // call render
+  CheckRootHooks();
+  const DataViewContainer = () => {return(<div>{dataview_byte_spans}</div>);};
+  const OffsetsViewContainer = () => {return(<div>{dataview_offset_spans}</div>);};
+  root_dataview_data!.render(<DataViewContainer />);
+  root_dataview_offsets!.render(<OffsetsViewContainer />);
+  is_reading_data = false;
+}
+
+
+function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
+  if (active_file == undefined) return;
+  let new_byte_offset = active_file.byte_offset;
+  if (e.deltaY < 0){
+    DataViewScrollUp();
+  } else {
+    // if the next scroll would put us past the end of the data, then dont scroll
+    let next_scroll_offset = active_file.byte_offset+active_file.bytes_per_row;
+    if (next_scroll_offset > active_file.file.size-1) return;
+    new_byte_offset = next_scroll_offset;
+  }
+  // skip if we didn't change the current offset
+  if (new_byte_offset != active_file.byte_offset) return;
+
+  LoadBytesView(active_file); // we'll do an optimized thing for this
+  
+}
+// -----------------------------------------------------------------------------------------------------------------------
+
+
+// //////////// //
+// GLOBAL DATA //
+// ////////// //
+var open_files:FileProcessor[] = [];
+var active_files:FileProcessor[] = []; // only modified when calling the refresh function
+
+
+
+
+
+
+
+// /////////////////// // --------------------------------------------------------------------------
+// FILE OPENING STUFF //
+// ///////////////// // 
+var has_created_roots = false;
+var root_fileview_files:Root|undefined = undefined;
+var root_dataview_data:Root|undefined = undefined;
+var root_dataview_offsets:Root|undefined = undefined;
+function CheckRootHooks(){ // theres probably a way to do this after the document loads, but this is the best i can think of for now
+  if (has_created_roots) return;
+  root_fileview_files   = createRoot(document.getElementById('FilePanel')!);
+  root_dataview_data    = createRoot(document.getElementById('dataView')!);
+  root_dataview_offsets = createRoot(document.getElementById('offsetsView')!);
+  if (root_fileview_files == undefined)   throw new Error("Failed to find fileview offsets panel")
+  if (root_dataview_data == undefined)    throw new Error("Failed to find dataview offsets panel")
+  if (root_dataview_offsets == undefined) throw new Error("Failed to find offsetsview offsets panel")
+  has_created_roots = true;
+}
 // file loading UI function
 function FileBoxOnChanged(e: { target: HTMLInputElement | null; }){ 
   if (e.target == null) throw("filebox target doesn't exist");
@@ -150,39 +253,6 @@ function FileBoxOnChanged(e: { target: HTMLInputElement | null; }){
   opened_file.RefreshSize(test);
   open_files.push(opened_file);
 };
-// -----------------------------------------------------------------------------------------------------------------------
-
-
-// //////////// //
-// GLOBAL DATA //
-// ////////// //
-var open_files:FileProcessor[] = [];
-var active_files:FileProcessor[] = []; // only modified when calling the refresh function
-
-
-
-
-
-
-
-// ////////////// //
-// CONTENT VIEWS //
-// //////////// //
-var has_created_roots = false;
-var root_fileview_files:Root|undefined = undefined;
-var root_dataview_data:Root|undefined = undefined;
-var root_dataview_offsets:Root|undefined = undefined;
-function CheckRootHooks(){ // theres probably a way to do this after the document loads, but this is the best i can think of for now
-  if (has_created_roots) return;
-  root_fileview_files   = createRoot(document.getElementById('FilePanel')!);
-  root_dataview_data    = createRoot(document.getElementById('dataView')!);
-  root_dataview_offsets = createRoot(document.getElementById('offsetsView')!);
-  if (root_fileview_files == undefined)   throw new Error("Failed to find fileview offsets panel")
-  if (root_dataview_data == undefined)    throw new Error("Failed to find dataview offsets panel")
-  if (root_dataview_offsets == undefined) throw new Error("Failed to find offsetsview offsets panel")
-  has_created_roots = true;
-}
-
 function RefreshFileView(){
   const FileViewContainer = () => {return(<div>{active_files.map((el, index) => React.createElement("button", { key: index, className: "ToolItem", onClick: FileClick, file_index: index }, el.file.name))}</div>);};
   active_files = []; // first update the active files list, so our indexes correctly correspond
@@ -203,58 +273,7 @@ function FileClick(e:Event){
   // CHECK IF THIS FILE IS ALREADY OPEN
   LoadBytesView(open_files[index])
 }
-
-// cached stuff for later use // so we dont have to regenerate all that data when we scroll up or down
-var dataview_offset_spans:HTMLSpanElement[] = [];
-var dataview_byte_spans:HTMLSpanElement[] = [];
-var active_file:FileProcessor|undefined = undefined;
-async function LoadBytesView(file:FileProcessor){
-  active_file = file;
-  // read & convert all bytes into react span elements
-  let byte_spans:React.DetailedReactHTMLElement<{key: number;className: string;}, HTMLElement>[] = [];
-  let offset_spans:React.DetailedReactHTMLElement<{key: number;className: string;}, HTMLElement>[] = [];
-  let skipped_rows = Math.trunc(active_file.byte_offset/active_file.bytes_per_row);
-  let rows_to_show = Math.min(active_file.total_rows - skipped_rows, active_file.visible_rows);
-  console.log("showing row: " + (skipped_rows) + "/" + active_file.total_rows);
-  for (let line_index = 0; line_index < rows_to_show; line_index++){
-    let row_bytes = await active_file.read(active_file.byte_offset+(line_index*active_file.bytes_per_row), active_file.bytes_per_row);
-    var row_text_content = Uint8ToHex(row_bytes);
-    byte_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, row_text_content));
-    offset_spans.push(React.createElement("span", { key: line_index, className: "DataSpan" }, ToPaddedHex(active_file.byte_offset + (line_index*active_file.bytes_per_row), 8)));
-  }
-  // then render data
-  CheckRootHooks();
-  const DataViewContainer = () => {return(<div>{byte_spans}</div>);};
-  const OffsetsViewContainer = () => {return(<div>{offset_spans}</div>);};
-  root_dataview_data!.render(<DataViewContainer />);
-  root_dataview_offsets!.render(<OffsetsViewContainer />);
-}
-
-
-function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
-  if (active_file == undefined) return;
-
-  if (e.deltaY < 0){
-    active_file.byte_offset = Math.max(active_file.byte_offset-active_file.bytes_per_row, 0);
-  } else {
-    active_file.byte_offset = Math.min(active_file.byte_offset+active_file.bytes_per_row, active_file.file.size-1);
-  }
-  LoadBytesView(active_file); // we'll do an optimized thing for this
-}
-
-// ///////////// //
-// UI FUNCTIONS //
-// /////////// //
-const offset_bytes = 4;
-
-
-var available_size:number = 0;
-
-var last_row_index:number = NaN;
-var last_row_count:number = NaN;
-
-var rows_added_top:number = NaN; // added/removed from the top of the data view
-var rows_added_bot:number = NaN; // added/removed from bottom
+// -------------------------------------------------------------------------------------------------
 
 // main app view
 function App() {
