@@ -1,4 +1,4 @@
-import React, { ChangeEventHandler, WheelEventHandler } from 'react';
+import React, { ChangeEventHandler, FormEvent, WheelEventHandler } from 'react';
 import './App.css';
 import assert from 'assert';
 import { arrayBuffer } from 'stream/consumers';
@@ -25,7 +25,7 @@ function Uint8ToHex(byte_array:Uint8Array) {
 // ////////////////////////////////// // ----------------------------------------------------------------------------------
 // TEMP FILE LOADING FUNCTIONALITIES // ----------------------
 // //////////////////////////////// // ------------------------------------------------------------------------------------
-const FileChunkSize:number = 1024;
+const FileChunkSize:number = 65536;
 const line_height = 19;
 var is_reading_data = false;
 class FileProcessor{
@@ -76,7 +76,9 @@ class FileProcessor{
     { let bytes_overflowing = last_offset - this.file.size;
       if (bytes_overflowing > 0){
         count -= bytes_overflowing;
-        if (count <= 0) throw new Error("Attempting to read outside of file bounds");
+        if (count <= 0) 
+          //throw new Error("Attempting to read outside of file bounds");
+          return new Uint8Array();
     }}
     // check whether the offset is below currently loaded data
     if (offset < this.lowest_offset){
@@ -90,7 +92,7 @@ class FileProcessor{
     }
     // or if it is beyond the loaded data
     else if (last_offset > this.highest_offset){
-      let upper_chunk_lowest_offset = Math.trunc(offset / FileChunkSize) * FileChunkSize;
+      let upper_chunk_lowest_offset = Math.trunc((last_offset-1) / FileChunkSize) * FileChunkSize;
       // if the data exists in the above block we can swap the current highest chunk to the lowest, else just read the lowest chunk as well
       if (this.highest_offset - last_offset <= FileChunkSize) this.lower_chunk = this.upper_chunk;
       else this.lower_chunk = await this.call_file_read(upper_chunk_lowest_offset - FileChunkSize);
@@ -142,6 +144,9 @@ var active_file:FileProcessor|undefined = undefined;
 function LoadBytesView(file:FileProcessor){
   if (is_reading_data) return; // we'll just block this if it cant perform the goto
   active_file = file;
+  // set UI values for row width and byte offset  
+  (document.getElementById("byteWidth") as HTMLInputElement).value = active_file.bytes_per_row.toString();
+  (document.getElementById("byteOffset") as HTMLInputElement).value = active_file.byte_offset.toString();
   DataViewGoto();
 }
 function DataViewDraw(){
@@ -156,7 +161,6 @@ async function DataViewGoto(target_offset:number|undefined = undefined){
   if (active_file == undefined) return;
   if (is_reading_data) return; // do not perform any UI updates if we're awaiting a previous update (maybe queue the inputs??)
   is_reading_data = true;
-  console.log("going to");
   // optional target offset param just gets applied onto our current offset
   if (target_offset != undefined) active_file.byte_offset = target_offset;
   // read & convert all bytes into react span elements
@@ -164,8 +168,10 @@ async function DataViewGoto(target_offset:number|undefined = undefined){
   let offset_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
   let skipped_rows = Math.trunc(active_file.byte_offset/active_file.bytes_per_row);
   let rows_to_show = Math.min(active_file.total_rows - skipped_rows, active_file.visible_rows);
+  // figure out the maths to determine if the byte offset causes there to be one less visible row
   for (let line_index = 0; line_index < rows_to_show; line_index++){
     let curr_byte_offset = active_file.byte_offset+(line_index*active_file.bytes_per_row);
+    if (curr_byte_offset >= active_file.file.size) break; // bandaid fix to prevent doing extra lines that we dont account for (related to having weird byte offsets)
     let row_bytes = await active_file.read(curr_byte_offset, active_file.bytes_per_row);
     let row_text_content = Uint8ToHex(row_bytes);
     byte_spans.push(React.createElement("span", { key: curr_byte_offset, className: "DataSpan" }, row_text_content));
@@ -179,12 +185,17 @@ async function DataViewGoto(target_offset:number|undefined = undefined){
 async function DataViewScrollUp(){
   if (active_file == undefined) return;
   if (active_file.byte_offset == 0) return; // cant scroll any further, so skip
-  if (is_reading_data) return;
-  is_reading_data = true;
   
   // make sure we dont scroll to offsets below the minimum offset, or if we do then just go to the lowest possible offset
   let next_byte_offset = active_file.byte_offset-active_file.bytes_per_row;
-  if (next_byte_offset < 0) return await DataViewGoto(0);
+  if (next_byte_offset < 0) {
+    console.log("resetting position to 0")
+    DataViewGoto(0);
+    return;
+  }
+
+  if (is_reading_data) return;
+  is_reading_data = true;
   
   // find new base offset
   active_file.byte_offset = next_byte_offset;
@@ -237,6 +248,48 @@ function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
   
 }
 // -----------------------------------------------------------------------------------------------------------------------
+
+function InputRowWidth(e:React.FormEvent<HTMLInputElement>){
+  let elem = (e.target as HTMLInputElement);
+  // filter out any non number characters
+  
+  elem.value = elem.value.replace(/\D/g,''); 
+  if (active_file == undefined) return;
+  
+  let num = 16; // fallback value if thing is empty
+  if (elem.value != "")
+    num = parseInt(elem.value);
+  // check to see if its not too large
+  if (num > 256){
+    elem.value = "256";
+    num = 256;
+  }
+  // skip if the number isn't different than our current row byte width
+  if (active_file.bytes_per_row == num) return;
+
+  // update and refresh
+  active_file.SetRowWidth(num);
+  DataViewGoto();
+}
+function InputByteOffset(e:React.FormEvent<HTMLInputElement>){
+  let elem = (e.target as HTMLInputElement);
+  // filter out any non number characters
+  if (elem.value == "") elem.value = "0";
+  elem.value = elem.value.replace(/\D/g,''); 
+  if (active_file == undefined) return;
+  
+  // parse
+  let num = parseInt(elem.value);
+  // check to see if its not out of file range
+  if (num >= active_file.file.size){
+    num = active_file.file.size-1;
+    elem.value = num.toString();
+  }
+
+  if (active_file.byte_offset == num) return;
+  DataViewGoto(num);
+}
+
 
 
 // //////////// //
@@ -320,6 +373,8 @@ function App() {
           <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
           <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
         </label>
+        <input id="byteWidth" type="text" onInput={InputRowWidth}></input>
+        <input id="byteOffset" type="text" onInput={InputByteOffset}></input>
       </div>
       {/* file view/list */}
       <div id="FilePanel" className='FileView'>
@@ -328,7 +383,10 @@ function App() {
       {/* content views */}
       <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
         <div id="offsetsView" className='OffsetView'></div>
-        <div id="dataView" className='DataView'></div>
+        <div className='DataWrapper'>
+          <div id="dataView" className='DataView'></div>
+        </div>
+        <div id='scrollView' className='ScrollView'></div>
       </div>
       <div className='Footer'/>
     </div>

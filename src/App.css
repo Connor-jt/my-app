@@ -88,13 +88,24 @@ html, body{
   flex: 0 1 auto;
   color: #db2100;
 }
+.DataWrapper{
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow-x: scroll;
+  overflow-y: hidden;
+}
 .DataView{
+  display: inline-block;
   font-size: 16px;
-  flex: 0 1 auto;
   color: #00dbbe;
 }
 .DataSpan{
   display: block;
+}
+.ScrollView{
+  flex: 0 1 auto;
+  width: 20px;
+  background-color: rgb(28, 28, 32);
 }
 
 .resizable-content { 
