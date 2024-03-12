@@ -182,24 +182,22 @@ async function DataViewScrollUp(){
   if (is_reading_data) return;
   is_reading_data = true;
   
-  // make sure we dont scroll to offsets below the minimum offset
+  // make sure we dont scroll to offsets below the minimum offset, or if we do then just go to the lowest possible offset
   let next_byte_offset = active_file.byte_offset-active_file.bytes_per_row;
-  if (next_byte_offset < 0){
-    DataViewGoto(0);
-    return;
-  }
-  console.log("scrolling up");
+  if (next_byte_offset < 0) return await DataViewGoto(0);
+  
   // find new base offset
   active_file.byte_offset = next_byte_offset;
-  // knock last react elemetn off of the list
-  dataview_byte_spans.pop();
-  dataview_offset_spans.pop();
+  // if the amount of visible rows is equal to the amount of rows, then pop the last one so we can make room for the new row above
+  if (dataview_byte_spans.length >= active_file.visible_rows){
+    dataview_byte_spans.pop();
+    dataview_offset_spans.pop();
+  }
   // create new react element for the top most item
   let row_bytes = await active_file.read(active_file.byte_offset, active_file.bytes_per_row);
   let row_text_content = Uint8ToHex(row_bytes);
   dataview_byte_spans.unshift(React.createElement("span", { key: active_file.byte_offset, className: "DataSpan" }, row_text_content));
   dataview_offset_spans.unshift(React.createElement("span", { key: active_file.byte_offset, className: "DataSpan" }, ToPaddedHex(active_file.byte_offset, 8)));
-  // draw
   DataViewDraw();
 }
 async function DataViewScrollDown(){
@@ -213,17 +211,17 @@ async function DataViewScrollDown(){
   active_file.byte_offset = next_byte_offset;
   let new_row_byte_offset = next_byte_offset + ((active_file.visible_rows-1) * active_file.bytes_per_row);
 
-  console.log("scrolling down");
   // clear first row from the lists
   dataview_byte_spans.shift();
   dataview_offset_spans.shift();
-  // create new react element for the bottom row
-  let row_bytes = await active_file.read(new_row_byte_offset, active_file.bytes_per_row);
-  let row_text_content = Uint8ToHex(row_bytes);
-  dataview_byte_spans.push(React.createElement("span", { key: new_row_byte_offset, className: "DataSpan" }, row_text_content));
-  dataview_offset_spans.push(React.createElement("span", { key: new_row_byte_offset, className: "DataSpan" }, ToPaddedHex(new_row_byte_offset, 8)));
-  // draw
-  console.log("predraw");
+  // if the next row to load is actually within the file size, then go ahead and load it
+  if (new_row_byte_offset < active_file.file.size) {
+    // create new react element for the bottom row
+    let row_bytes = await active_file.read(new_row_byte_offset, active_file.bytes_per_row);
+    let row_text_content = Uint8ToHex(row_bytes);
+    dataview_byte_spans.push(React.createElement("span", { key: new_row_byte_offset, className: "DataSpan" }, row_text_content));
+    dataview_offset_spans.push(React.createElement("span", { key: new_row_byte_offset, className: "DataSpan" }, ToPaddedHex(new_row_byte_offset, 8)));
+  }
   DataViewDraw();
 }
 
