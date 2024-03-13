@@ -57,7 +57,7 @@ class FileProcessor{
     this.lower_chunk = await this.call_file_read(0);
     this.upper_chunk = await this.call_file_read(FileChunkSize);
     this.has_init = true;
-    RefreshFileView();
+    RefreshFileView(); // call this AFTER we finish reading, so file list can properly append it
   }
   async read(offset:number, count:number):Promise<Uint8Array>{
     if (count == 0) throw new Error("dont read 0 bytes");
@@ -144,10 +144,10 @@ function LoadBytesView(file:FileProcessor){
   if (is_reading_data) return; // we'll just block this if it cant perform the goto
   active_file = file;
   // set UI values for row width and byte offset  
-  (document.getElementById("byteWidth") as HTMLInputElement).value = active_file.bytes_per_row.toString();
-  (document.getElementById("byteOffset") as HTMLInputElement).value = active_file.byte_offset.toString();
+  CheckRootHooks();
+  doc_byte_width!.value = active_file.bytes_per_row.toString();
+  doc_byte_offset!.value = active_file.byte_offset.toString();
   DataViewGoto();
-  
 }
 function DataViewDraw(){ // called whenever any of the data changes in the byte view window (IE data is scrolled)
   CheckRootHooks();
@@ -158,7 +158,7 @@ function DataViewDraw(){ // called whenever any of the data changes in the byte 
   // update scrollbar visual
   update_scroll_info();
   // update byte offset display
-  (document.getElementById("byteOffset") as HTMLInputElement).value = active_file!.byte_offset.toString();
+  doc_byte_offset!.value = active_file!.byte_offset.toString();
   is_reading_data = false; // unlock read 
 }
 async function DataViewGoto(target_offset:number|undefined = undefined){
@@ -303,7 +303,6 @@ var open_files:FileProcessor[] = [];
 var active_files:FileProcessor[] = []; // only modified when calling the refresh function
 // ------------------------------------------------------------------------------------------------------------
 
-
 // /////////////////// // --------------------------------------------------------------------------
 // FILE OPENING STUFF //
 // ///////////////// // 
@@ -311,14 +310,21 @@ var has_created_roots = false;
 var root_fileview_files:Root|undefined = undefined;
 var root_dataview_data:Root|undefined = undefined;
 var root_dataview_offsets:Root|undefined = undefined;
+// some extra stuff that we should totally cache
+var doc_scroll_thumb:HTMLDivElement|undefined = undefined;
+var doc_content_view:HTMLDivElement|undefined = undefined;
+var doc_byte_width:HTMLInputElement|undefined = undefined;
+var doc_byte_offset:HTMLInputElement|undefined = undefined;
 function CheckRootHooks(){ // theres probably a way to do this after the document loads, but this is the best i can think of for now
   if (has_created_roots) return;
   root_fileview_files   = createRoot(document.getElementById('FilePanel')!);
   root_dataview_data    = createRoot(document.getElementById('dataView')!);
   root_dataview_offsets = createRoot(document.getElementById('offsetsView')!);
-  if (root_fileview_files == undefined)   throw new Error("Failed to find fileview offsets panel")
-  if (root_dataview_data == undefined)    throw new Error("Failed to find dataview offsets panel")
-  if (root_dataview_offsets == undefined) throw new Error("Failed to find offsetsview offsets panel")
+  // extra loading stuff
+  doc_scroll_thumb = document.getElementById("scrollThumb") as HTMLDivElement;
+  doc_content_view = document.getElementById('contentView') as HTMLDivElement;
+  doc_byte_width = document.getElementById("byteWidth") as HTMLInputElement;
+  doc_byte_offset = document.getElementById("byteOffset") as HTMLInputElement;
   has_created_roots = true;
 }
 // file loading UI function
@@ -333,9 +339,8 @@ function FileBoxOnChanged(e: { target: HTMLInputElement | null; }){
 
   let opened_file = new FileProcessor(file);
   opened_file.init();
-  let test = document.getElementById('contentView')!.clientHeight;
-  console.log("filepanel size: " + test)
-  opened_file.RefreshSize(test);
+  CheckRootHooks(); // do init, i think this is the only place this actually needs to be called??
+  opened_file.RefreshSize(doc_content_view!.clientHeight);
   open_files.push(opened_file);
 };
 function RefreshFileView(){
@@ -356,7 +361,7 @@ function FileClick(e:Event){
 
   // do thing with this file index
   // CHECK IF THIS FILE IS ALREADY OPEN
-  LoadBytesView(open_files[index])
+  LoadBytesView(active_files[index])
 } // -------------------------------------------------------------------------------------------------
 
 
@@ -377,12 +382,10 @@ function update_scroll_info(){
   let top_percentage = 1.0 - ((active_file.file.size - bytes_skipped_upper) / active_file.file.size);
   let bottom_percentage = 1.0 - Math.min((active_file.file.size - bytes_skipped_lower) / active_file.file.size, 1.0); // cap out at 100
 
-  console.log("prescaled: top: " + top_percentage + " bottom: " + bottom_percentage);
   // then we need to ensure the bottom and top are a minimum distance from another (theres a problem where the bar hardly moves when focused at the first or last 15 percent of data)
   let scrollbar_height = 1.0 - (top_percentage + bottom_percentage);
   const minimum_scrollbar_height = 0.05;
   let min_expanded_on_each_side = (minimum_scrollbar_height/2) - (scrollbar_height/2);
-  console.log("bar: " + scrollbar_height + " min expand: " + min_expanded_on_each_side);
   if (scrollbar_height < minimum_scrollbar_height){
     if (top_percentage < min_expanded_on_each_side){
       bottom_percentage -= (minimum_scrollbar_height) - (top_percentage + scrollbar_height);
@@ -397,53 +400,86 @@ function update_scroll_info(){
     }
   }
 
-  update_size(top_percentage*100, bottom_percentage*100);
+  update_scroll_size(top_percentage*100, bottom_percentage*100);
 }
-function update_size(new_top:number, new_bot:number){
-  console.log("top: " + new_top + " bottom: " + new_bot);
-  let test = document.getElementById("scrollThumb") as HTMLDivElement;
-  test.style.top = new_top.toString() + "%";
-  test.style.bottom = new_bot.toString() + "%";
+function update_scroll_size(new_top:number, new_bot:number){
+  CheckRootHooks();
+  doc_scroll_thumb!.style.top = new_top.toString() + "%";
+  doc_scroll_thumb!.style.bottom = new_bot.toString() + "%";
 }// ------------------------------------------------------------------------------------------
+
+// ////////////////// // ---------------------------------------------------------------------
+// ON WIDNOW RESIZED //
+// //////////////// //
+var has_user_finished_resizing = false;
+var resize_waiter:NodeJS.Timer|undefined;
+function window_resized(){
+  if (resize_waiter != undefined) {
+    has_user_finished_resizing = false;
+    return;}
+  has_user_finished_resizing = true;
+  // and just give it a shot every second or so before redoing all the UI
+  resize_waiter = setInterval(resize_pending, 500);
+}
+function resize_pending(){
+  // if window was called while this was in timeout, then restart wait
+  if (has_user_finished_resizing == false){
+    has_user_finished_resizing = true;
+    return;}
+  // otherwise we're clear to complete the resizing
+  for (let i = 0; i < active_files.length; i++){
+    let curr_file = active_files[i];
+    curr_file.RefreshSize(doc_content_view!.clientHeight);
+  }
+  DataViewGoto(); // and then apply updates visually
+  has_user_finished_resizing = false
+  clearInterval(resize_waiter);
+  resize_waiter = undefined;
+}
+// -------------------------------------------------------------------------------------------
 
 
 // //////////// // --------------------------------------------------------------------------
 // APP UI JUNK //
 // ////////// //
-// main app view
 function App() {
-return (
-  <div className="App">
-    {/* dropdowns and tool bar */}
-    <div className="ToolView">
-      <button className='ToolItem'>File</button>
-      <button className='ToolItem'>Edit</button>
-      <button className='ToolItem'>Tools</button>
-      <label className="ToolItem ToolFileItemWrapper">
-        <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
-        <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
-      </label>
-      <input id="byteWidth" type="text" onInput={InputRowWidth}></input>
-      <input id="byteOffset" type="text" onInput={InputByteOffset}></input>
-    </div>
-    {/* file view/list */}
-    <div id="FilePanel" className='FileView'>
-    </div>
-    <hr className='FileViewSeparator'></hr>
-    {/* content views */}
-    <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
-      <div id="offsetsView" className='OffsetView'></div>
-      <div className='DataWrapper'>
-        <div id="dataView" className='DataView'></div>
+  window.addEventListener('resize', window_resized, true);
+  return (
+    <div className="App">
+      {/* dropdowns and tool bar */}
+      <div className="ToolView">
+        <button className='ToolItem'>File</button>
+        <button className='ToolItem'>Edit</button>
+        <button className='ToolItem'>Tools</button>
+        <label className="ToolItem ToolFileItemWrapper">
+          <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
+          <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
+        </label>
+        
+        <span className='ToolText'>Row Width:</span>
+        <input id="byteWidth" className='ToolInput' type="text" onInput={InputRowWidth}></input>
+        <span className='ToolText'>Offset:</span>
+        <input id="byteOffset" className='ToolInput' type="text" onInput={InputByteOffset}></input>
       </div>
-      <div className='ScrollView'>
-        <div id="scrollThumb" className='ScrollThumb' >
+      {/* file view/list */}
+      <div id="FilePanel" className='FileView'>
+      </div>
+      <hr className='FileViewSeparator'></hr>
+      {/* content views */}
+      <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
+        <div id="offsetsView" className='OffsetView'></div>
+        <div className='DataWrapper'>
+          <div id="dataView" className='DataView'></div>
+        </div>
+        <div className='ScrollView'>
+          <div id="scrollThumb" className='ScrollThumb' >
+          </div>
         </div>
       </div>
+      <div className='Footer'/>
     </div>
-    <div className='Footer'/>
-  </div>
-);}
+  );
+}
 export default App;
 // ------------------------------------------------------------------------------------------
 

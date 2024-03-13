@@ -10,12 +10,29 @@ html, body{
 .App {
   margin: 0px;
   padding: 0px;
-  background-color: #010409;
+  background-color: #131922;
   font-size: calc(10px + 2vmin);
   color: white;
   height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+/* Track */
+::-webkit-scrollbar-track {
+  background: none;
+}
+/* Handle */
+::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background: #282828;
+}
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: #343434;
 }
 
 /* //////////////// // -------------------------------------------------------------------------------
@@ -32,10 +49,10 @@ html, body{
   color: white;
 }
 .ToolItem:hover{
-  background-color: #9090ff15;
+  background-color: #9090ff31;
 }
 .ToolItem:active{
-  background-color: #9090ff35;
+  background-color: #9090ff48;
 }
 .ToolFileItemWrapper{
   font-size: 11px;
@@ -49,6 +66,21 @@ html, body{
 .ToolFileItem{
   display: none;
 }
+.ToolText{
+  font-size: 11px;
+  margin-top: 7px;
+  vertical-align: middle;
+  float: left;
+  background-color: transparent;
+  color: white;
+}
+.ToolInput{
+  margin: 5px;
+  float: left;
+  background-color: transparent;
+  color: white;
+  border: 1px solid rgb(180, 180, 180);
+}
 
 /* ///////////////// // -------------------------------------------------------------------------------
 // FILE LIST STYLES //
@@ -58,7 +90,7 @@ html, body{
 }
 .FileViewSeparator{
   border: 0;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid #2f313f;
   height: 1px;
   margin: 5px 0px 0px 0px;
   padding: 0px;
@@ -72,7 +104,7 @@ html, body{
 // ////////////////// */
 .App .ContentView{
   flex: 1 1 auto;
-  background-color: #0d1117;
+  background-color: #0d1216;
   font-family: monospace;
   display: flex;
   flex-direction: row;
@@ -80,13 +112,13 @@ html, body{
 }
 .App .Footer {
   flex: 0 1 18px;
-  background-color: #384153;
+  background-color: #282e36;
 }
 .OffsetView{
   margin: 0px 10px 0px 10px;
   font-size: 16px;
   flex: 0 1 auto;
-  color: #db2100;
+  color: #3c4453;
 }
 .DataWrapper{
   flex: 1 1 auto;
@@ -97,23 +129,23 @@ html, body{
 .DataView{
   display: inline-block;
   font-size: 16px;
-  color: #00dbbe;
+  color: #20c2df;
 }
 .DataSpan{
   display: block;
 }
 .ScrollView{
   position: relative;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   width: 20px;
-  background-color: rgb(28, 28, 32);
+  background-color: rgba(32, 32, 36, 0.226);
 }
 .ScrollThumb{
   position: absolute;
   top: 25px;
   bottom: 25px;
   width: 100%;
-  background-color: rgb(90, 90, 90);
+  background-color: rgb(50, 62, 80);
 }
 
 .resizable-content { 
