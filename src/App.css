@@ -103,9 +103,17 @@ html, body{
   display: block;
 }
 .ScrollView{
+  position: relative;
   flex: 0 1 auto;
   width: 20px;
   background-color: rgb(28, 28, 32);
+}
+.ScrollThumb{
+  position: absolute;
+  top: 25px;
+  bottom: 25px;
+  width: 100%;
+  background-color: rgb(90, 90, 90);
 }
 
 .resizable-content { 

@@ -1,8 +1,5 @@
-import React, { ChangeEventHandler, FormEvent, WheelEventHandler } from 'react';
+import React, { ChangeEventHandler, FormEvent, WheelEventHandler, useRef, useState } from 'react';
 import './App.css';
-import assert from 'assert';
-import { arrayBuffer } from 'stream/consumers';
-import ReactDOM from 'react-dom';
 import { Root, createRoot } from 'react-dom/client';
 
 
@@ -17,14 +14,12 @@ function ToPaddedHex(value:number, digits:number) {
 function Uint8ToHex(byte_array:Uint8Array) {
   function i2hex(i:number) { return ('0' + i.toString(16)).slice(-2);}
   return Array.from(byte_array).map(i2hex).join(' ');
-}
-// ---------------------------------------------------------------
-
+} // ---------------------------------------------------------------
 
 
 // ////////////////////////////////// // ----------------------------------------------------------------------------------
-// TEMP FILE LOADING FUNCTIONALITIES // ----------------------
-// //////////////////////////////// // ------------------------------------------------------------------------------------
+// TEMP FILE LOADING FUNCTIONALITIES // 
+// //////////////////////////////// // 
 const FileChunkSize:number = 65536;
 const line_height = 19;
 var is_reading_data = false;
@@ -135,8 +130,12 @@ class FileProcessor{
     }}
     return new Promise(read_promise());
   }
-}
+} // ------------------------------------------------------------------------------------------------------------------------
 
+
+// /////////////////////////// // -----------------------------------------------------------------------
+// CURRENT DATA VIEWING STUFF //
+// ///////////////////////// //
 // cached stuff for later use // so we dont have to regenerate all that data when we scroll up or down
 var dataview_byte_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
 var dataview_offset_spans:React.DetailedReactHTMLElement<{}, HTMLElement>[] = [];
@@ -148,13 +147,18 @@ function LoadBytesView(file:FileProcessor){
   (document.getElementById("byteWidth") as HTMLInputElement).value = active_file.bytes_per_row.toString();
   (document.getElementById("byteOffset") as HTMLInputElement).value = active_file.byte_offset.toString();
   DataViewGoto();
+  
 }
-function DataViewDraw(){
+function DataViewDraw(){ // called whenever any of the data changes in the byte view window (IE data is scrolled)
   CheckRootHooks();
   const DataViewContainer = () => {return(<div>{dataview_byte_spans}</div>);};
   const OffsetsViewContainer = () => {return(<div>{dataview_offset_spans}</div>);};
   root_dataview_data!.render(<DataViewContainer />);
   root_dataview_offsets!.render(<OffsetsViewContainer />);
+  // update scrollbar visual
+  update_scroll_info();
+  // update byte offset display
+  (document.getElementById("byteOffset") as HTMLInputElement).value = active_file!.byte_offset.toString();
   is_reading_data = false; // unlock read 
 }
 async function DataViewGoto(target_offset:number|undefined = undefined){
@@ -235,8 +239,6 @@ async function DataViewScrollDown(){
   }
   DataViewDraw();
 }
-
-
 function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
   if (active_file == undefined) return;
   if (dataview_byte_spans.length == 0 || dataview_offset_spans.length == 0) throw new Error("cant scroll if no data is loaded");
@@ -246,9 +248,12 @@ function ScrollDataView(e:React.WheelEvent<HTMLDivElement>){
   else if (e.deltaY > 0)
     DataViewScrollDown();
   
-}
-// -----------------------------------------------------------------------------------------------------------------------
+} // -----------------------------------------------------------------------------------------------------------------------
 
+
+// /////////////////////////////// // --------------------------------------------------------------------------
+// UI FILE SETTINGS CONFIGURATION //
+// ///////////////////////////// //
 function InputRowWidth(e:React.FormEvent<HTMLInputElement>){
   let elem = (e.target as HTMLInputElement);
   // filter out any non number characters
@@ -288,20 +293,15 @@ function InputByteOffset(e:React.FormEvent<HTMLInputElement>){
 
   if (active_file.byte_offset == num) return;
   DataViewGoto(num);
-}
+} // -------------------------------------------------------------------------------------------------------------
 
 
-
-// //////////// //
+// //////////// // --------------------------------------------------------------------------------------------
 // GLOBAL DATA //
 // ////////// //
 var open_files:FileProcessor[] = [];
 var active_files:FileProcessor[] = []; // only modified when calling the refresh function
-
-
-
-
-
+// ------------------------------------------------------------------------------------------------------------
 
 
 // /////////////////// // --------------------------------------------------------------------------
@@ -357,48 +357,93 @@ function FileClick(e:Event){
   // do thing with this file index
   // CHECK IF THIS FILE IS ALREADY OPEN
   LoadBytesView(open_files[index])
-}
-// -------------------------------------------------------------------------------------------------
+} // -------------------------------------------------------------------------------------------------
 
+
+// /////////////////////// //--------------------------------------------------------------
+// UPDATE SCROLLBAR THING //
+// ///////////////////// //
+function update_scroll_info(){
+  if (active_file == undefined) return;
+  // do we also update the value of that scroll position thing??
+
+  
+  let bytes_skipped_upper = active_file.byte_offset;
+  // calculate how many bytes are currently visible
+  let bytes_visible = active_file.bytes_per_row * active_file.visible_rows;
+  // calculate how many bytes are not visible at the end
+  let bytes_skipped_lower = active_file.file.size - (bytes_skipped_upper + bytes_visible)
+
+  let top_percentage = 1.0 - ((active_file.file.size - bytes_skipped_upper) / active_file.file.size);
+  let bottom_percentage = 1.0 - Math.min((active_file.file.size - bytes_skipped_lower) / active_file.file.size, 1.0); // cap out at 100
+
+  console.log("prescaled: top: " + top_percentage + " bottom: " + bottom_percentage);
+  // then we need to ensure the bottom and top are a minimum distance from another (theres a problem where the bar hardly moves when focused at the first or last 15 percent of data)
+  let scrollbar_height = 1.0 - (top_percentage + bottom_percentage);
+  const minimum_scrollbar_height = 0.05;
+  let min_expanded_on_each_side = (minimum_scrollbar_height/2) - (scrollbar_height/2);
+  console.log("bar: " + scrollbar_height + " min expand: " + min_expanded_on_each_side);
+  if (scrollbar_height < minimum_scrollbar_height){
+    if (top_percentage < min_expanded_on_each_side){
+      bottom_percentage -= (minimum_scrollbar_height) - (top_percentage + scrollbar_height);
+      top_percentage = 0; 
+    }
+    else if (bottom_percentage < min_expanded_on_each_side){
+      top_percentage -= (minimum_scrollbar_height) - (bottom_percentage + scrollbar_height);
+      bottom_percentage = 0; 
+    } else {
+      top_percentage -= min_expanded_on_each_side;
+      bottom_percentage -= min_expanded_on_each_side;
+    }
+  }
+
+  update_size(top_percentage*100, bottom_percentage*100);
+}
+function update_size(new_top:number, new_bot:number){
+  console.log("top: " + new_top + " bottom: " + new_bot);
+  let test = document.getElementById("scrollThumb") as HTMLDivElement;
+  test.style.top = new_top.toString() + "%";
+  test.style.bottom = new_bot.toString() + "%";
+}// ------------------------------------------------------------------------------------------
+
+
+// //////////// // --------------------------------------------------------------------------
+// APP UI JUNK //
+// ////////// //
 // main app view
 function App() {
-  return (
-    <div className="App">
-      {/* dropdowns and tool bar */}
-      <div className="ToolView">
-        <button className='ToolItem'>File</button>
-        <button className='ToolItem'>Edit</button>
-        <button className='ToolItem'>Tools</button>
-        <label className="ToolItem ToolFileItemWrapper">
-          <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
-          <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
-        </label>
-        <input id="byteWidth" type="text" onInput={InputRowWidth}></input>
-        <input id="byteOffset" type="text" onInput={InputByteOffset}></input>
-      </div>
-      {/* file view/list */}
-      <div id="FilePanel" className='FileView'>
-      </div>
-      <hr className='FileViewSeparator'></hr>
-      {/* content views */}
-      <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
-        <div id="offsetsView" className='OffsetView'></div>
-        <div className='DataWrapper'>
-          <div id="dataView" className='DataView'></div>
-        </div>
-        <div id='scrollView' className='ScrollView'></div>
-      </div>
-      <div className='Footer'/>
+return (
+  <div className="App">
+    {/* dropdowns and tool bar */}
+    <div className="ToolView">
+      <button className='ToolItem'>File</button>
+      <button className='ToolItem'>Edit</button>
+      <button className='ToolItem'>Tools</button>
+      <label className="ToolItem ToolFileItemWrapper">
+        <input id="file" type="file" className='ToolFileItem' onChange={FileBoxOnChanged} title="Select file to load" />
+        <span className='ToolFileItemText'>DEBUG LOAD FILE</span>
+      </label>
+      <input id="byteWidth" type="text" onInput={InputRowWidth}></input>
+      <input id="byteOffset" type="text" onInput={InputByteOffset}></input>
     </div>
-  );
-}
-
+    {/* file view/list */}
+    <div id="FilePanel" className='FileView'>
+    </div>
+    <hr className='FileViewSeparator'></hr>
+    {/* content views */}
+    <div id='contentView' className='ContentView' onWheel={ScrollDataView}>
+      <div id="offsetsView" className='OffsetView'></div>
+      <div className='DataWrapper'>
+        <div id="dataView" className='DataView'></div>
+      </div>
+      <div className='ScrollView'>
+        <div id="scrollThumb" className='ScrollThumb' >
+        </div>
+      </div>
+    </div>
+    <div className='Footer'/>
+  </div>
+);}
 export default App;
-/*
+// ------------------------------------------------------------------------------------------
 
-        <button className='ToolItem'>example1</button>
-        <button className='ToolItem'>example2</button>
-
-
-
-*/
